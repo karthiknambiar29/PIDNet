@@ -50,6 +50,7 @@ def parse_args():
     return args
 
 def input_transform(image):
+    print(image.shape)
     image = image.astype(np.float32)[:, :, ::-1]
     image = image / 255.0
     image -= mean
@@ -74,6 +75,7 @@ def load_pretrained(model, pretrained):
 if __name__ == '__main__':
     args = parse_args()
     images_list = glob.glob(args.r+'*'+args.t)
+    print(len(images_list))
     sv_path = args.r+'outputs/'
     
     model = models.pidnet.get_pred_model(args.a, 19 if args.c else 11)
@@ -81,7 +83,7 @@ if __name__ == '__main__':
     model.eval()
     with torch.no_grad():
         for img_path in images_list:
-            img_name = img_path.split("\\")[-1]
+            img_name = img_path.split("/")[-1]
             img = cv2.imread(os.path.join(args.r, img_name),
                                cv2.IMREAD_COLOR)
             sv_img = np.zeros_like(img).astype(np.uint8)
