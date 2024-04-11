@@ -91,10 +91,12 @@ if __name__ == '__main__':
             img = img.transpose((2, 0, 1)).copy()
             img = torch.from_numpy(img).unsqueeze(0).cuda()
             pred = model(img)
+            print(pred.shape)
             pred = F.interpolate(pred, size=img.size()[-2:], 
                                  mode='bilinear', align_corners=True)
+            print(pred.shape)
             pred = torch.argmax(pred, dim=1).squeeze(0).cpu().numpy()
-            
+            print(pred.shape)
             for i, color in enumerate(color_map):
                 for j in range(3):
                     sv_img[:,:,j][pred==i] = color_map[i][j]
