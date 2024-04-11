@@ -75,6 +75,7 @@ _C.TRAIN.RESUME = False
 
 _C.TRAIN.BATCH_SIZE_PER_GPU = 32
 _C.TRAIN.SHUFFLE = True
+_C.TRAIN.INSTANCE = True
 
 # testing
 _C.TEST = CN()

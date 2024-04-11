@@ -57,7 +57,6 @@ def main():
 
     logger, final_output_dir, tb_log_dir = create_logger(
         config, args.cfg, 'train')
-
     logger.info(pprint.pformat(args))
     logger.info(config)
 
@@ -92,7 +91,8 @@ def main():
                         ignore_label=config.TRAIN.IGNORE_LABEL,
                         base_size=config.TRAIN.BASE_SIZE,
                         crop_size=crop_size,
-                        scale_factor=config.TRAIN.SCALE_FACTOR)
+                        scale_factor=config.TRAIN.SCALE_FACTOR,
+                        instance=config.TRAIN.INSTANCE)
 
     trainloader = torch.utils.data.DataLoader(
         train_dataset,
