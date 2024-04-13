@@ -5818,3 +5818,5 @@ data/camvid/labels/readme.txt
 data/cityscapes/readme.txt
 output/cityscapes/pidnet_small_cityscapes/best.pt
 output/cityscapes/pidnet_small_cityscapes/checkpoint.pth.tar
+log/*
+output/cityscapes/pidnet_small_cityscapes/*

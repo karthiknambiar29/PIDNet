@@ -213,8 +213,8 @@ def main():
         val_writer.add_scalar('SEM_Loss', val_sem, epoch)
         val_writer.add_scalar('BCE_Loss', val_bce, epoch)
         val_writer.add_scalar('SB_Loss', val_sb, epoch)
-        train_writer.add_scalar('GiOU_Loss', val_box_loss, epoch)
-        train_writer.add_scalar('CONFIDENCE_Loss', val_conf_loss, epoch)
+        val_writer.add_scalar('GiOU_Loss', val_box_loss, epoch)
+        val_writer.add_scalar('CONFIDENCE_Loss', val_conf_loss, epoch)
         # if flag_rm == 1 or (epoch % 5 == 0 and epoch < real_end - 100) or (epoch >= real_end - 100):
         #     valid_loss, mean_IoU, IoU_array = validate(config, 
         #                 testloader, model, writer_dict)
