@@ -12,7 +12,7 @@ DATASET:
   DATASET: cityscapes
   ROOT: data/
   TEST_SET: 'list/cityscapes/val.lst'
-  TRAIN_SET: 'list/cityscapes/train_inst.lst'
+  TRAIN_SET: 'list/cityscapes/train.lst'
   NUM_CLASSES: 19
 MODEL:
   NAME: pidnet_small
@@ -26,7 +26,7 @@ LOSS:
   SB_WEIGHTS: 1.0
 TRAIN:
   IMAGE_SIZE:
-  - 1024
+  - 2048
   - 1024
   BASE_SIZE: 2048
   BATCH_SIZE_PER_GPU: 6
@@ -34,16 +34,16 @@ TRAIN:
   BEGIN_EPOCH: 0
   END_EPOCH: 484
   RESUME: false
-  OPTIMIZER: sgd
+  OPTIMIZER: adam
   LR: 0.01
   WD: 0.0005
   MOMENTUM: 0.9
   NESTEROV: false
-  FLIP: true
-  MULTI_SCALE: true
+  FLIP: false
+  MULTI_SCALE: false
   IGNORE_LABEL: 255
   SCALE_FACTOR: 16
-  INSTANCE: true
+  INSTANCE: false
 TEST:
   IMAGE_SIZE:
   - 2048

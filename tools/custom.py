@@ -41,7 +41,7 @@ def parse_args():
     
     parser.add_argument('--a', help='pidnet-s, pidnet-m or pidnet-l', default='pidnet-l', type=str)
     parser.add_argument('--c', help='cityscapes pretrained or not', type=bool, default=True)
-    parser.add_argument('--p', help='dir for pretrained model', default='../pretrained_models/cityscapes/PIDNet_L_Cityscapes_test.pt', type=str)
+    parser.add_argument('--p', help='dir for pretrained model', default='/home/moonlab/Documents/dse316/PIDNet/output/cityscapes/pidnet_small_cityscapes/best.pt', type=str)
     parser.add_argument('--r', help='root or dir for input images', default='../samples/', type=str)
     parser.add_argument('--t', help='the format of input images (.jpg, .png, ...)', default='.png', type=str)     
 
@@ -76,7 +76,7 @@ if __name__ == '__main__':
     args = parse_args()
     images_list = glob.glob(args.r+'*'+args.t)
     print(len(images_list))
-    sv_path = args.r+'outputs/'
+    sv_path = args.r+'instance/'
     
     model = models.pidnet.get_pred_model(args.a, 19 if args.c else 11)
     model = load_pretrained(model, args.p).cuda()

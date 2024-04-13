@@ -15,14 +15,19 @@ import torch
 import torch.nn as nn
 import torch.backends.cudnn as cudnn
 import torch.optim
-from tensorboardX import SummaryWriter
+from torch.utils.tensorboard import SummaryWriter
+import time
+# Initialize TensorBoard summary writers
+time_str = time.strftime('%Y-%m-%d-%H-%M')
+train_writer = SummaryWriter(f'logs/pidnet-small-{time_str}/train')
+val_writer = SummaryWriter(f'logs/pidnet-small-{time_str}/val')
 
 import _init_paths
 import models
 import datasets
 from configs import config
 from configs import update_config
-from utils.criterion import CrossEntropy, OhemCrossEntropy, BondaryLoss
+from utils.criterion import CrossEntropy, OhemCrossEntropy, BondaryLoss, GIoULoss
 from utils.function import train, validate
 from utils.utils import create_logger, FullModel
 
@@ -132,8 +137,10 @@ def main():
                                     weight=train_dataset.class_weights)
 
     bd_criterion = BondaryLoss()
+    box_loss = GIoULoss()
+    conf_loss = torch.nn.BCELoss()
     
-    model = FullModel(model, sem_criterion, bd_criterion)
+    model = FullModel(model, sem_criterion, bd_criterion, box_loss, conf_loss)
     model = nn.DataParallel(model, device_ids=gpus).cuda()
 
     # optimizer
@@ -146,6 +153,15 @@ def main():
                                 momentum=config.TRAIN.MOMENTUM,
                                 weight_decay=config.TRAIN.WD,
                                 nesterov=config.TRAIN.NESTEROV,
+                                )
+
+    elif config.TRAIN.OPTIMIZER == 'adam':
+        params_dict = dict(model.named_parameters())
+        params = [{'params': list(params_dict.values()), 'lr': config.TRAIN.LR}]
+
+        optimizer = torch.optim.Adam(params,
+                                lr=config.TRAIN.LR,
+                                weight_decay=config.TRAIN.WD,
                                 )
     else:
         raise ValueError('Only Support SGD optimizer')
@@ -178,13 +194,30 @@ def main():
         if current_trainloader.sampler is not None and hasattr(current_trainloader.sampler, 'set_epoch'):
             current_trainloader.sampler.set_epoch(epoch)
 
-        train(config, epoch, config.TRAIN.END_EPOCH, 
+        train_loss, train_acc, train_sem, train_bce, train_sb, train_box_loss, train_conf_loss = train(config, epoch, config.TRAIN.END_EPOCH, 
                   epoch_iters, config.TRAIN.LR, num_iters,
                   trainloader, optimizer, model, writer_dict)
-
-        if flag_rm == 1 or (epoch % 5 == 0 and epoch < real_end - 100) or (epoch >= real_end - 100):
-            valid_loss, mean_IoU, IoU_array = validate(config, 
-                        testloader, model, writer_dict)
+        train_writer.add_scalar('Loss', train_loss, epoch)
+        # train_writer.add_scalar('mIoU', train_mIoU, epoch)
+        train_writer.add_scalar('Accuracy', train_acc, epoch)
+        train_writer.add_scalar('SEM_Loss', train_sem, epoch)
+        train_writer.add_scalar('BCE_Loss', train_bce, epoch)
+        train_writer.add_scalar('SB_Loss', train_sb, epoch)
+        train_writer.add_scalar('GiOU_Loss', train_box_loss, epoch)
+        train_writer.add_scalar('CONFIDENCE_Loss', train_conf_loss, epoch)
+        val_loss, val_mIoU, val_acc, val_sem, val_bce, val_sb, val_box_loss, val_conf_loss = validate(config, 
+                    testloader, model, writer_dict)
+        val_writer.add_scalar('Loss', val_loss, epoch)
+        val_writer.add_scalar('mIoU', val_mIoU, epoch)
+        val_writer.add_scalar('Accuracy', val_acc, epoch)
+        val_writer.add_scalar('SEM_Loss', val_sem, epoch)
+        val_writer.add_scalar('BCE_Loss', val_bce, epoch)
+        val_writer.add_scalar('SB_Loss', val_sb, epoch)
+        train_writer.add_scalar('GiOU_Loss', val_box_loss, epoch)
+        train_writer.add_scalar('CONFIDENCE_Loss', val_conf_loss, epoch)
+        # if flag_rm == 1 or (epoch % 5 == 0 and epoch < real_end - 100) or (epoch >= real_end - 100):
+        #     valid_loss, mean_IoU, IoU_array = validate(config, 
+        #                 testloader, model, writer_dict)
         if flag_rm == 1:
             flag_rm = 0
 
@@ -196,14 +229,13 @@ def main():
             'state_dict': model.module.state_dict(),
             'optimizer': optimizer.state_dict(),
         }, os.path.join(final_output_dir,'checkpoint.pth.tar'))
-        if mean_IoU > best_mIoU:
-            best_mIoU = mean_IoU
+        if val_mIoU > best_mIoU:
+            best_mIoU = val_mIoU
             torch.save(model.module.state_dict(),
                     os.path.join(final_output_dir, 'best.pt'))
         msg = 'Loss: {:.3f}, MeanIU: {: 4.4f}, Best_mIoU: {: 4.4f}'.format(
-                    valid_loss, mean_IoU, best_mIoU)
+                    val_loss, val_mIoU, best_mIoU)
         logging.info(msg)
-        logging.info(IoU_array)
 
 
 

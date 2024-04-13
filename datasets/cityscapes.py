@@ -93,7 +93,9 @@ class Cityscapes(BaseDataset):
                 files.append({
                     "img": image_path,
                     "label": label_path,
-                    "name": name
+                    "instance": label_path.replace("label", "instance"),
+                    "name": name,
+                    # "bbox": self.get_bb_box('/home/moonlab/Documents/dse316/PIDNet/data/cityscapes/' +label_path)
                 })
         return files
     
@@ -103,7 +105,7 @@ class Cityscapes(BaseDataset):
         label = np.where(mask, label, -1)
         unique_intensities, counts = np.unique(label, return_counts=True)
         n = 19
-        top_n_indices = np.argsort(counts)[-n-1:-1]
+        top_n_indices = np.argsort(counts)[-n:]
         top_n_intensities = unique_intensities[top_n_indices]
         mapping = {intensity: rank for rank, intensity in enumerate(top_n_intensities)}
         label = np.vectorize(lambda x: mapping.get(x, -1))(label)
@@ -120,6 +122,40 @@ class Cityscapes(BaseDataset):
             for k, v in self.label_mapping.items():
                 label[temp == k] = v
         return label
+    
+    def find_bounding_box(self, mask, intensity, confidence_score=1):
+        rows, cols = np.where(mask == intensity)
+        if len(rows) == 0 or len(cols) == 0:
+            return None
+        min_row, max_row = min(rows), max(rows)
+        min_col, max_col = min(cols), max(cols)
+        return [min_row/mask.shape[0], min_col/mask.shape[1], max_row/mask.shape[0], max_col/mask.shape[1], confidence_score]
+
+    def get_bb_box(self, path):
+        instance_image = cv2.imread(path, cv2.IMREAD_ANYDEPTH)
+        mask = np.logical_and(instance_image >= 26000, instance_image < 27000)
+        instance_image = np.where(mask, instance_image, -1)
+        unique_intensities, counts = np.unique(instance_image, return_counts=True)
+        n = 20
+        top_n_indices = np.flip(np.argsort(counts)[-n:])
+        top_n_intensities = unique_intensities[top_n_indices]
+        if -1 in top_n_intensities:
+            top_n_intensities = top_n_intensities[top_n_intensities != -1]
+        else:
+            top_n_intensities = top_n_intensities[:-1]
+        mapping = {intensity: rank for rank, intensity in enumerate(top_n_intensities)}
+        mapped_image = np.vectorize(lambda x: mapping.get(x, -1))(instance_image)
+
+        bounding_boxes = []
+        for intensity in np.arange(0, 19):
+            if intensity == -1:
+                continue
+            bbox = self.find_bounding_box(mapped_image, intensity)
+            if bbox:
+                bounding_boxes.append(bbox)
+            else:
+                bounding_boxes.append([0.0, 0.0, 0.0, 0.0, 0.0])
+        return np.array(bounding_boxes)
 
     def __getitem__(self, index):
         item = self.files[index]
@@ -142,11 +178,10 @@ class Cityscapes(BaseDataset):
                             cv2.IMREAD_ANYDEPTH)
             label = self.convert_instance(label)
         
-
+        bbox = self.get_bb_box(os.path.join(self.root,'cityscapes',item["instance"]))
         image, label, edge = self.gen_sample(image, label, 
                                 self.multi_scale, self.flip, edge_size=self.bd_dilate_size)
-        np.save('label.npy', label)
-        return image.copy(), label.copy(), edge.copy(), np.array(size), name
+        return image.copy(), label.copy(), edge.copy(), np.array(size), name, bbox.copy()
 
     
     def single_scale_inference(self, config, model, image):

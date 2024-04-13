@@ -84,6 +84,26 @@ class PIDNet(nn.Module):
             
         self.layer5_d = self._make_layer(Bottleneck, planes * 2, planes * 2, 1)
         
+        # Bounding Box Branch
+        self.bb_conv = nn.Sequential(
+            segmenthead(planes * 4, head_planes, num_classes),
+            nn.BatchNorm2d(num_classes, momentum=0.1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(num_classes, num_classes, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(num_classes, momentum=0.1),
+            nn.ReLU(inplace=True)
+            
+        )
+        self.fc = nn.Sequential(
+            nn.Linear(8192, 4096),
+            nn.ReLU(inplace=True),
+            nn.Linear(4096, 512),
+            nn.ReLU(inplace=True),
+            nn.Linear(512, 128),
+            nn.ReLU(inplace=True),
+            nn.Linear(128, 5)
+        )
+
         # Prediction Head
         if self.augment:
             self.seghead_p = segmenthead(planes * 2, head_planes, num_classes)
@@ -172,14 +192,39 @@ class PIDNet(nn.Module):
                         size=[height_output, width_output],
                         mode='bilinear', align_corners=algc)
 
-        x_ = self.final_layer(self.dfm(x_, x, x_d))
+        x_temp = self.dfm(x_, x, x_d)
+        x_ = self.final_layer(x_temp)
+        bb_out = self.bb_conv(x_temp)
+
+        bb_out = bb_out.view(bb_out.size(0), bb_out.size(1), -1)
+
+        bb_out = bb_out.permute(1, 0, 2).contiguous()  # reshape for compatibility with loss function
+
+        BB = []
+        CONFIDENCE = []
+        for bb in bb_out:
+
+            x = self.fc(bb)
+            box = x[:, :4]
+            confidence = x[:, -1]
+            
+            box = box.unsqueeze(1)
+
+            confidence = confidence.unsqueeze(1)
+            CONFIDENCE.append(confidence)
+            BB.append(box)
+        BB = torch.cat(BB, dim=1)
+
+        CONFIDENCE = torch.cat(CONFIDENCE, dim=1)
+        CONFIDENCE = nn.Sigmoid()(CONFIDENCE)
+        # bb_out = BB.permute(1, 0, 2).contiguous()
 
         if self.augment: 
             x_extra_p = self.seghead_p(temp_p)
             x_extra_d = self.seghead_d(temp_d)
-            return [x_extra_p, x_, x_extra_d]
+            return [BB, CONFIDENCE, x_extra_p, x_, x_extra_d]
         else:
-            return x_      
+            return BB, x_     
 
 def get_seg_model(cfg, imgnet_pretrained):
     

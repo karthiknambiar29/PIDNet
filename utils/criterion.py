@@ -5,6 +5,8 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 from configs import config
+import torchvision.ops as ops
+
 
 
 class CrossEntropy(nn.Module):
@@ -130,7 +132,18 @@ class BondaryLoss(nn.Module):
         loss = bce_loss
         
         return loss
-    
+
+class GIoULoss(nn.Module):
+    def __init__(self):
+        super(GIoULoss, self).__init__()
+
+    def forward(self, bbox_pred, bbox_gt):
+        bbox_pred = bbox_pred.view(-1, bbox_pred.size(2))
+        bbox_gt = bbox_gt.view(-1, bbox_gt.size(2))
+        iou = ops.distance_box_iou_loss(bbox_pred, bbox_gt, reduction='mean')
+        return iou
+
+
 if __name__ == '__main__':
     a = torch.zeros(2,64,64)
     a[:,5,:] = 1
