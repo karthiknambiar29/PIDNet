@@ -5816,3 +5816,5 @@ pretrained_models/imagenet/PIDNet_M_ImageNet.pth.tar
 pretrained_models/imagenet/PIDNet_S_ImageNet.pth.tar
 data/camvid/labels/readme.txt
 data/cityscapes/readme.txt
+output/cityscapes/pidnet_small_cityscapes/best.pt
+output/cityscapes/pidnet_small_cityscapes/checkpoint.pth.tar
