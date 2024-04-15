@@ -1,6 +1,7 @@
 # ------------------------------------------------------------------------------
 # Written by Jiacong Xu (jiacong.xu@tamu.edu)
 # ------------------------------------------------------------------------------
+import  numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -12,7 +13,47 @@ BatchNorm2d = nn.BatchNorm2d
 bn_mom = 0.1
 algc = False
 
+class SpatialSoftmax(nn.Module):
+    # Source: https://gist.github.com/jeasinema/1cba9b40451236ba2cfb507687e08834
+    def __init__(self, height, width, channel, temperature=None, data_format='NCHW'):
+        super().__init__()
 
+        self.data_format = data_format
+        self.height = height
+        self.width = width
+        self.channel = channel
+
+        if temperature:
+            self.temperature = nn.Parameter(torch.ones(1)*temperature)
+        else:
+            self.temperature = 1.
+
+        pos_x, pos_y = np.meshgrid(
+            np.linspace(-1., 1., self.height),
+            np.linspace(-1., 1., self.width)
+        )
+        pos_x = torch.from_numpy(pos_x.reshape(self.height*self.width)).float()
+        pos_y = torch.from_numpy(pos_y.reshape(self.height*self.width)).float()
+        self.register_buffer('pos_x', pos_x)
+        self.register_buffer('pos_y', pos_y)
+
+    def forward(self, feature):
+        # Output:
+        #   (N, C*2) x_0 y_0 ...
+
+        if self.data_format == 'NHWC':
+            feature = feature.transpose(1, 3).tranpose(2, 3).view(-1, self.height*self.width)
+        else:
+            feature = feature.view(-1, self.height*self.width)
+
+        weight = F.softmax(feature/self.temperature, dim=-1)
+        expected_x = torch.sum(torch.autograd.Variable(self.pos_x)*weight, dim=1, keepdim=True)
+        expected_y = torch.sum(torch.autograd.Variable(self.pos_y)*weight, dim=1, keepdim=True)
+        expected_xy = torch.cat([expected_x, expected_y], 1)
+        # feature_keypoints = expected_xy.view(-1, self.channel*2)
+        feature_keypoints = expected_xy.view(-1, self.channel, 2)
+
+        return feature_keypoints
 
 class PIDNet(nn.Module):
 
@@ -104,8 +145,8 @@ class PIDNet(nn.Module):
             nn.Linear(128, 5)
         )
         self.deconv = nn.Sequential(
-            nn.BatchNorm2d(128),
-            nn.ConvTranspose2d(128,256,3,2,1,1),
+            nn.BatchNorm2d(head_planes),
+            nn.ConvTranspose2d(head_planes,256,3,2,1,1),
             nn.ReLU(True),
             nn.BatchNorm2d(256),
             nn.ConvTranspose2d(256,128,3,2,1,1),
@@ -114,6 +155,14 @@ class PIDNet(nn.Module):
             nn.ConvTranspose2d(128,64,3,2,1,1),
             nn.ReLU(True),
         )
+
+        self.location_pred = nn.ModuleList([
+            nn.Sequential(
+                nn.BatchNorm2d(64),
+                nn.Conv2d(64,4,1,1,0),
+                SpatialSoftmax(256,512,4),
+            ) for i in range(19)
+        ])
         # Prediction Head
         if self.augment:
             self.seghead_p = segmenthead(planes * 2, head_planes, num_classes)
@@ -167,7 +216,6 @@ class PIDNet(nn.Module):
 
         width_output = x.shape[-1] // 8
         height_output = x.shape[-2] // 8
-
         x = self.conv1(x)
         x = self.layer1(x)
         x = self.relu(self.layer2(self.relu(x)))
@@ -203,31 +251,36 @@ class PIDNet(nn.Module):
                         mode='bilinear', align_corners=algc)
 
         x_temp = self.dfm(x_, x, x_d)
-        x_ = self.final_layer(x_temp)
+        temp = self.deconv(x_temp)
+        location_preds = [location_pred(temp) for location_pred in self.location_pred]
+        location_preds = torch.stack(location_preds, dim=1)
+        # x_ = self.final_layer(x_temp)
+
         
-        bb_out = self.bb_conv(x_temp)
+        # bb_out = self.bb_conv(x_temp)
 
-        bb_out = bb_out.view(bb_out.size(0), bb_out.size(1), -1)
+        # bb_out = bb_out.view(bb_out.size(0), bb_out.size(1), -1)
 
-        bb_out = bb_out.permute(1, 0, 2).contiguous()  # reshape for compatibility with loss function
+        # bb_out = bb_out.permute(1, 0, 2).contiguous()  # reshape for compatibility with loss function
 
-        BB = []
-        CONFIDENCE = []
-        for bb in bb_out:
+        # BB = []
+        # CONFIDENCE = []
+        # for bb in bb_out:
 
-            x = self.fc(bb)
-            box = x[:, :4]
-            confidence = x[:, -1]
+        #     x = self.fc(bb)
+        #     box = x[:, :4]
+        #     confidence = x[:, -1]
             
-            box = box.unsqueeze(1)
+        #     box = box.unsqueeze(1)
 
-            confidence = confidence.unsqueeze(1)
-            CONFIDENCE.append(confidence)
-            BB.append(box)
-        BB = torch.cat(BB, dim=1)
+        #     confidence = confidence.unsqueeze(1)
+        #     CONFIDENCE.append(confidence)
+        #     BB.append(box)
+        # BB = torch.cat(BB, dim=1)
+        return location_preds
 
-        CONFIDENCE = torch.cat(CONFIDENCE, dim=1)
-        CONFIDENCE = nn.Sigmoid()(CONFIDENCE)
+        # CONFIDENCE = torch.cat(CONFIDENCE, dim=1)
+        # CONFIDENCE = nn.Sigmoid()(CONFIDENCE)
         # bb_out = BB.permute(1, 0, 2).contiguous()
 
         if self.augment: 

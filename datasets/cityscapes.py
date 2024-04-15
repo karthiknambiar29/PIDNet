@@ -123,13 +123,19 @@ class Cityscapes(BaseDataset):
                 label[temp == k] = v
         return label
     
-    def find_bounding_box(self, mask, intensity, confidence_score=1):
+    def find_bounding_box(self, mask, intensity):
         rows, cols = np.where(mask == intensity)
         if len(rows) == 0 or len(cols) == 0:
             return None
         min_row, max_row = min(rows), max(rows)
         min_col, max_col = min(cols), max(cols)
-        return [min_row/mask.shape[0], min_col/mask.shape[1], max_row/mask.shape[0], max_col/mask.shape[1], confidence_score]
+        return np.array([
+            [min_row, min_col],
+            [min_row, max_col],
+            [max_row, max_col],
+            [max_row, min_col]
+        ])
+        return [min_row, min_col, max_row, max_col]
 
     def get_bb_box(self, path):
         instance_image = cv2.imread(path, cv2.IMREAD_ANYDEPTH)
@@ -151,10 +157,15 @@ class Cityscapes(BaseDataset):
             if intensity == -1:
                 continue
             bbox = self.find_bounding_box(mapped_image, intensity)
-            if bbox:
-                bounding_boxes.append(bbox)
+            if bbox is not None:
+                bounding_boxes.append(bbox.astype(np.float32))
             else:
-                bounding_boxes.append([0.0, 0.0, 0.0, 0.0, 0.0])
+                bounding_boxes.append(np.array([
+                    [0.0, 0.0],
+                    [0.0, 0.0],
+                    [0.0, 0.0],
+                    [0.0, 0.0]
+                ]).astype(np.float32))
         return np.array(bounding_boxes)
 
     def __getitem__(self, index):
@@ -163,24 +174,26 @@ class Cityscapes(BaseDataset):
         image = cv2.imread(os.path.join(self.root,'cityscapes',item["img"]),
                            cv2.IMREAD_COLOR)
         size = image.shape
+        image = self.input_transform(image, city=True)
+        image = image.transpose((2, 0, 1))
+        # if 'test' in self.list_path:
+        #     image = self.input_transform(image)
+        #     image = image.transpose((2, 0, 1))
 
-        if 'test' in self.list_path:
-            image = self.input_transform(image)
-            image = image.transpose((2, 0, 1))
-
-            return image.copy(), np.array(size), name
-        if not self.instance:
-            label = cv2.imread(os.path.join(self.root,'cityscapes',item["label"]),
-                            cv2.IMREAD_GRAYSCALE)
-            label = self.convert_label(label)
-        else:
-            label = cv2.imread(os.path.join(self.root,'cityscapes',item["label"]),
-                            cv2.IMREAD_ANYDEPTH)
-            label = self.convert_instance(label)
+        #     return image.copy(), np.array(size), name
+        # if not self.instance:
+        #     label = cv2.imread(os.path.join(self.root,'cityscapes',item["label"]),
+        #                     cv2.IMREAD_GRAYSCALE)
+        #     label = self.convert_label(label)
+        # else:
+        #     label = cv2.imread(os.path.join(self.root,'cityscapes',item["label"]),
+        #                     cv2.IMREAD_ANYDEPTH)
+        #     label = self.convert_instance(label)
         
         bbox = self.get_bb_box(os.path.join(self.root,'cityscapes',item["instance"]))
-        image, label, edge = self.gen_sample(image, label, 
-                                self.multi_scale, self.flip, edge_size=self.bd_dilate_size)
+        # image, label, edge = self.gen_sample(image, label, 
+        #                         self.multi_scale, self.flip, edge_size=self.bd_dilate_size)
+        return image.copy(), np.array(size), name, bbox.copy()
         return image.copy(), label.copy(), edge.copy(), np.array(size), name, bbox.copy()
 
     

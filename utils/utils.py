@@ -20,13 +20,11 @@ from configs import config
 
 class FullModel(nn.Module):
 
-  def __init__(self, model, sem_loss, bd_loss, bbox_loss, conf_loss):
+  def __init__(self, model, loss, iou):
     super(FullModel, self).__init__()
     self.model = model
-    self.sem_loss = sem_loss
-    self.bd_loss = bd_loss
-    self.bbox_loss = bbox_loss
-    self.conf_loss = conf_loss
+    self.loss = loss
+    self.iou = iou
 
   def pixel_acc(self, pred, label):
     _, preds = torch.max(pred, dim=1)
@@ -36,32 +34,37 @@ class FullModel(nn.Module):
     acc = acc_sum.float() / (pixel_sum.float() + 1e-10)
     return acc
 
-  def forward(self, inputs, labels, bd_gt, bbox, *args, **kwargs):
+  def forward(self, inputs, location_gt, *args, **kwargs):
     
     outputs = self.model(inputs, *args, **kwargs)
     
-    h, w = labels.size(1), labels.size(2)
-    ph, pw = outputs[-3].size(2), outputs[-3].size(3)
-    if ph != h or pw != w:
-        for i in range(2, len(outputs)):
-            outputs[i] = F.interpolate(outputs[i], size=(
-                h, w), mode='bilinear', align_corners=config.MODEL.ALIGN_CORNERS)
+    # h, w = labels.size(1), labels.size(2)
+    # ph, pw = outputs[-3].size(2), outputs[-3].size(3)
+    # if ph != h or pw != w:
+    #     for i in range(2, len(outputs)):
+    #         outputs[i] = F.interpolate(outputs[i], size=(
+    #             h, w), mode='bilinear', align_corners=config.MODEL.ALIGN_CORNERS)
 
-    acc  = self.pixel_acc(outputs[-2], labels)
-    loss_s = self.sem_loss(outputs[-3:-1], labels)
-    loss_b = self.bd_loss(outputs[-1], bd_gt)
+    # acc  = self.pixel_acc(outputs[-2], labels)
+    # loss_s = self.sem_loss(outputs[-3:-1], labels)
+    # loss_b = self.bd_loss(outputs[-1], bd_gt)
 
-    loss_box = self.bbox_loss(outputs[-5], bbox[:, :, :-1])
-    loss_confidence = self.conf_loss(outputs[-4].view(-1, 1), bbox[:, :, -1].view(-1, 1))
+    loss_location = self.loss(outputs, location_gt)
+    iou = self.iou(outputs, location_gt )
 
 
-    filler = torch.ones_like(labels) * config.TRAIN.IGNORE_LABEL
-    bd_label = torch.where(F.sigmoid(outputs[-1][:,0,:,:])>0.8, labels, filler)
-    loss_sb = self.sem_loss(outputs[-2], bd_label)
 
-    loss = loss_s + loss_b + loss_sb + loss_box + 1e-6*loss_confidence
+    # loss_box = self.bbox_loss(outputs[-5], bbox[:, :, :-1])
+    # loss_confidence = self.conf_loss(outputs[-4].view(-1, 1), bbox[:, :, -1].view(-1, 1))
 
-    return torch.unsqueeze(loss,0), outputs[:-1], acc, [loss_s, loss_b, loss_sb, loss_box, loss_confidence]
+
+    # filler = torch.ones_like(labels) * config.TRAIN.IGNORE_LABEL
+    # bd_label = torch.where(F.sigmoid(outputs[-1][:,0,:,:])>0.8, labels, filler)
+    # loss_sb = self.sem_loss(outputs[-2], bd_label)
+
+    loss = loss_location+ iou
+
+    return torch.unsqueeze(loss,0), outputs, [loss_location, iou]
 
 
 class AverageMeter(object):

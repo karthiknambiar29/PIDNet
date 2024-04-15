@@ -120,6 +120,16 @@ def weighted_bce(bd_pre, target):
 
     return loss
 
+class LocationLoss(torch.nn.Module):
+    def __init__(self, w=384, h=160, device='cuda', **kwargs):
+        super().__init__()
+        self._img_size = torch.FloatTensor([256,512]).to(device)
+    
+    def forward(self, pred_locations, locations):
+        locations = locations.to(pred_locations.device)
+        locations = locations/(0.5*self._img_size) - 1
+        return torch.mean(torch.abs(pred_locations - locations), dim=(1,2))
+    
 
 class BondaryLoss(nn.Module):
     def __init__(self, coeff_bce = 20.0):
@@ -133,11 +143,14 @@ class BondaryLoss(nn.Module):
         
         return loss
 
-class GIoULoss(nn.Module):
+class IoULoss(nn.Module):
     def __init__(self):
-        super(GIoULoss, self).__init__()
+        super(IoULoss, self).__init__()
 
     def forward(self, bbox_pred, bbox_gt):
+        bbox_gt = torch.cat([bbox_gt[:, :, 0, :], bbox_gt[:, :, 2, :]], dim=2)
+        bbox_pred = (bbox_pred+torch.FloatTensor([1,1]).to('cuda'))*torch.FloatTensor([256/2,512/2]).to('cuda')
+        bbox_pred = torch.cat([bbox_pred[:, :, 0, :], bbox_pred[:, :, 2, :]], dim=2)
         bbox_pred = bbox_pred.view(-1, bbox_pred.size(2))
         bbox_gt = bbox_gt.view(-1, bbox_gt.size(2))
         iou = ops.distance_box_iou_loss(bbox_pred, bbox_gt, reduction='mean')

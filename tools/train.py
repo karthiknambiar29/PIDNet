@@ -27,7 +27,7 @@ import models
 import datasets
 from configs import config
 from configs import update_config
-from utils.criterion import CrossEntropy, OhemCrossEntropy, BondaryLoss, GIoULoss
+from utils.criterion import CrossEntropy, OhemCrossEntropy, BondaryLoss, IoULoss, LocationLoss
 from utils.function import train, validate
 from utils.utils import create_logger, FullModel
 
@@ -136,11 +136,11 @@ def main():
         sem_criterion = CrossEntropy(ignore_label=config.TRAIN.IGNORE_LABEL,
                                     weight=train_dataset.class_weights)
 
-    bd_criterion = BondaryLoss()
-    box_loss = GIoULoss()
+    location_loss = LocationLoss()
+    box_loss = IoULoss()
     conf_loss = torch.nn.BCELoss()
     
-    model = FullModel(model, sem_criterion, bd_criterion, box_loss, conf_loss)
+    model = FullModel(model, location_loss, box_loss)
     model = nn.DataParallel(model, device_ids=gpus).cuda()
 
     # optimizer
@@ -194,27 +194,18 @@ def main():
         if current_trainloader.sampler is not None and hasattr(current_trainloader.sampler, 'set_epoch'):
             current_trainloader.sampler.set_epoch(epoch)
 
-        train_loss, train_acc, train_sem, train_bce, train_sb, train_box_loss, train_conf_loss = train(config, epoch, config.TRAIN.END_EPOCH, 
+        train_loss, train_location_loss, train_iou_loss = train(config, epoch, config.TRAIN.END_EPOCH, 
                   epoch_iters, config.TRAIN.LR, num_iters,
                   trainloader, optimizer, model, writer_dict)
         train_writer.add_scalar('Loss', train_loss, epoch)
         # train_writer.add_scalar('mIoU', train_mIoU, epoch)
-        train_writer.add_scalar('Accuracy', train_acc, epoch)
-        train_writer.add_scalar('SEM_Loss', train_sem, epoch)
-        train_writer.add_scalar('BCE_Loss', train_bce, epoch)
-        train_writer.add_scalar('SB_Loss', train_sb, epoch)
-        train_writer.add_scalar('GiOU_Loss', train_box_loss, epoch)
-        train_writer.add_scalar('CONFIDENCE_Loss', train_conf_loss, epoch)
-        val_loss, val_mIoU, val_acc, val_sem, val_bce, val_sb, val_box_loss, val_conf_loss = validate(config, 
+        train_writer.add_scalar('Location Loss', train_location_loss, epoch)
+        train_writer.add_scalar('IOU Loss', train_iou_loss, epoch)
+        val_loss, val_location_loss, val_iou_loss = validate(config, 
                     testloader, model, writer_dict)
         val_writer.add_scalar('Loss', val_loss, epoch)
-        val_writer.add_scalar('mIoU', val_mIoU, epoch)
-        val_writer.add_scalar('Accuracy', val_acc, epoch)
-        val_writer.add_scalar('SEM_Loss', val_sem, epoch)
-        val_writer.add_scalar('BCE_Loss', val_bce, epoch)
-        val_writer.add_scalar('SB_Loss', val_sb, epoch)
-        val_writer.add_scalar('GiOU_Loss', val_box_loss, epoch)
-        val_writer.add_scalar('CONFIDENCE_Loss', val_conf_loss, epoch)
+        val_writer.add_scalar('Location Loss', val_location_loss, epoch)
+        val_writer.add_scalar('IOU Loss', val_iou_loss, epoch)
         # if flag_rm == 1 or (epoch % 5 == 0 and epoch < real_end - 100) or (epoch >= real_end - 100):
         #     valid_loss, mean_IoU, IoU_array = validate(config, 
         #                 testloader, model, writer_dict)
@@ -229,13 +220,12 @@ def main():
             'state_dict': model.module.state_dict(),
             'optimizer': optimizer.state_dict(),
         }, os.path.join(final_output_dir,'checkpoint.pth.tar'))
-        if val_mIoU > best_mIoU:
-            best_mIoU = val_mIoU
-            torch.save(model.module.state_dict(),
-                    os.path.join(final_output_dir, 'best.pt'))
-        msg = 'Loss: {:.3f}, MeanIU: {: 4.4f}, Best_mIoU: {: 4.4f}'.format(
-                    val_loss, val_mIoU, best_mIoU)
-        logging.info(msg)
+        # if val_mIoU > best_mIoU:
+        #     best_mIoU = val_mIoU
+        torch.save(model.module.state_dict(),
+                os.path.join(final_output_dir + '/model', f'best+{epoch}.pt'))
+
+
 
 
 

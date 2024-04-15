@@ -38,6 +38,7 @@ class BaseDataset(data.Dataset):
             image = image.astype(np.float32)[:, :, ::-1]
         else:
             image = image.astype(np.float32)
+        image = cv2.resize(image, (512, 256))
         image = image / 255.0
         image -= self.mean
         image /= self.std

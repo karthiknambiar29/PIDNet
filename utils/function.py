@@ -24,13 +24,9 @@ def train(config, epoch, num_epoch, epoch_iters, base_lr,
     model.train()
 
     batch_time = AverageMeter()
-    ave_loss = AverageMeter()
-    ave_acc  = AverageMeter()
-    avg_sem_loss = AverageMeter()
-    avg_bce_loss = AverageMeter()
-    avg_sb_loss = AverageMeter()
-    avg_box_loss = AverageMeter()
-    avg_conf_loss = AverageMeter()
+    avg_loss = AverageMeter()
+    avg_loss_location  = AverageMeter()
+    avg_iou = AverageMeter()
     tic = time.time()
     cur_iters = epoch*epoch_iters
     # writer = writer_dict['writer']
@@ -40,16 +36,16 @@ def train(config, epoch, num_epoch, epoch_iters, base_lr,
     #     (config.DATASET.NUM_CLASSES, config.DATASET.NUM_CLASSES, nums))
 
     for i_iter, batch in enumerate(trainloader, 0):
-        images, labels, bd_gts, _, _, bbox = batch
-        size = labels.size()
+        images, _, _, bbox = batch
+        # size = labels.size()
         images = images.cuda()
-        labels = labels.long().cuda()
-        bd_gts = bd_gts.float().cuda()
+        # labels = labels.long().cuda()
+        # bd_gts = bd_gts.float().cuda()
         bbox = bbox.float().cuda()
         # print(bbox)
         
 
-        losses, pred, acc, loss_list = model(images, labels, bd_gts, bbox)
+        losses, pred, loss_list = model(images, bbox)
         # if not isinstance(pred, (list, tuple)):
         #         pred = [pred]
         # for i, x in enumerate(pred):
@@ -66,7 +62,6 @@ def train(config, epoch, num_epoch, epoch_iters, base_lr,
         #         config.TRAIN.IGNORE_LABEL
         #     )
         loss = losses.mean()
-        acc  = acc.mean()
 
         model.zero_grad()
         loss.backward()
@@ -77,14 +72,9 @@ def train(config, epoch, num_epoch, epoch_iters, base_lr,
         tic = time.time()
 
         # update average loss
-        ave_loss.update(loss.item())
-        ave_acc.update(acc.item())
-        avg_sem_loss.update(loss_list[0].mean().item())
-        avg_bce_loss.update(loss_list[1].mean().item())
-        avg_sb_loss.update(loss_list[2].mean().item())
-        avg_box_loss.update(loss_list[3].mean().item())
-        avg_conf_loss.update(loss_list[4].mean().item())
-
+        avg_loss.update(loss.item())
+        avg_loss_location.update(loss_list[0].mean().item())
+        avg_iou.update(loss_list[1].mean().item())
 
         # lr = adjust_learning_rate(optimizer,
         #                           base_lr,
@@ -93,10 +83,10 @@ def train(config, epoch, num_epoch, epoch_iters, base_lr,
 
         if i_iter % config.PRINT_FREQ == 0:
             msg = 'Epoch: [{}/{}] Iter:[{}/{}], Time: {:.2f}, ' \
-                  'lr: {}, Loss: {:.6f}, Acc:{:.6f}, Semantic loss: {:.6f}, BCE loss: {:.6f}, SB loss: {:.6f}, GIOU loss: {:.6f}, CONF loss: {:.6f}' .format(
+                  'lr: {}, Loss: {:.6f}, location:{:.6f}, iou: {:.6f}' .format(
                       epoch, num_epoch, i_iter, epoch_iters,
-                      batch_time.average(), [x['lr'] for x in optimizer.param_groups], ave_loss.average(),
-                      ave_acc.average(), avg_sem_loss.average(), avg_bce_loss.average(),avg_sb_loss.average(),avg_box_loss.average(),avg_conf_loss.average())
+                      batch_time.average(), [x['lr'] for x in optimizer.param_groups], avg_loss.average(),
+                      avg_loss_location.average(), avg_iou.average())
             logging.info(msg)
     # for i in range(nums):
     #     pos = confusion_matrix[..., i].sum(1)
@@ -112,65 +102,58 @@ def train(config, epoch, num_epoch, epoch_iters, base_lr,
     # # writer.add_scalar('train_avg_bce_loss', avg_bce_loss.average(), global_steps)
     # # writer.add_scalar('train_avg_sb_loss', ave_loss.average()-avg_sem_loss.average()-avg_bce_loss.average(), global_steps)
     # writer_dict['train_global_steps'] = global_steps + 1
-    return ave_loss.average(), ave_acc.average(), avg_sem_loss.average(), avg_bce_loss.average(), avg_sb_loss.average(), avg_box_loss.average(), avg_conf_loss.average()
+    return avg_loss.average(), avg_loss_location.average(), avg_iou.average()
 
 def validate(config, testloader, model, writer_dict):
     model.eval()
-    ave_loss = AverageMeter()
-    ave_acc  = AverageMeter()
-    avg_sem_loss = AverageMeter()
-    avg_bce_loss = AverageMeter()
-    avg_sb_loss = AverageMeter()
-    avg_box_loss = AverageMeter()
-    avg_conf_loss = AverageMeter()
+    avg_loss = AverageMeter()
+    avg_loss_location  = AverageMeter()
+    avg_iou = AverageMeter()
     nums = config.MODEL.NUM_OUTPUTS
     confusion_matrix = np.zeros(
         (config.DATASET.NUM_CLASSES, config.DATASET.NUM_CLASSES, nums))
     with torch.no_grad():
         for idx, batch in enumerate(testloader):
-            image, label, bd_gts, _, _, bbox = batch
-            size = label.size()
+            image, _,  _, bbox = batch
+            # size = label.size()
             image = image.cuda()
-            label = label.long().cuda()
-            bd_gts = bd_gts.float().cuda()
+            # label = label.long().cuda()/
+            # bd_gts = bd_gts.float().cuda()
             bbox = bbox.float().cuda()
-            losses, pred, acc, loss_list = model(image, label, bd_gts, bbox)
-            if not isinstance(pred, (list, tuple)):
-                pred = [pred]
-            for i, x in enumerate(pred[2:]):
-                x = F.interpolate(
-                    input=x, size=size[-2:],
-                    mode='bilinear', align_corners=config.MODEL.ALIGN_CORNERS
-                )
+            losses, pred, loss_list = model(image, bbox)
+            # if not isinstance(pred, (list, tuple)):
+            #     pred = [pred]
+            # for i, x in enumerate(pred[2:]):
+            #     x = F.interpolate(
+            #         input=x, size=size[-2:],
+            #         mode='bilinear', align_corners=config.MODEL.ALIGN_CORNERS
+            #     )
 
-                confusion_matrix[..., i] += get_confusion_matrix(
-                    label,
-                    x,
-                    size,
-                    config.DATASET.NUM_CLASSES,
-                    config.TRAIN.IGNORE_LABEL
-                )
+            #     confusion_matrix[..., i] += get_confusion_matrix(
+            #         label,
+            #         x,
+            #         size,
+            #         config.DATASET.NUM_CLASSES,
+            #         config.TRAIN.IGNORE_LABEL
+            #     )
 
-            if idx % 10 == 0:
-                print(idx)
+            # if idx % 10 == 0:
+            #     print(idx)
 
             loss = losses.mean()
-            ave_loss.update(loss.item())
-            ave_acc.update(acc.item())
-            avg_sem_loss.update(loss_list[0].mean().item())
-            avg_bce_loss.update(loss_list[1].mean().item())
-            avg_sb_loss.update(loss_list[2].mean().item())
-            avg_box_loss.update(loss_list[3].mean().item())
-            avg_conf_loss.update(loss_list[4].mean().item())
+            # update average loss
+            avg_loss.update(loss.item())
+            avg_loss_location.update(loss_list[0].mean().item())
+            avg_iou.update(loss_list[1].mean().item())
 
-    for i in range(nums):
-        pos = confusion_matrix[..., i].sum(1)
-        res = confusion_matrix[..., i].sum(0)
-        tp = np.diag(confusion_matrix[..., i])
-        IoU_array = (tp / np.maximum(1.0, pos + res - tp))
-        mean_IoU = IoU_array.mean()
+    # for i in range(nums):
+    #     pos = confusion_matrix[..., i].sum(1)
+    #     res = confusion_matrix[..., i].sum(0)
+    #     tp = np.diag(confusion_matrix[..., i])
+    #     IoU_array = (tp / np.maximum(1.0, pos + res - tp))
+    #     mean_IoU = IoU_array.mean()
         
-        logging.info('{} {} {}'.format(i, IoU_array, mean_IoU))
+        # logging.info('{} {} {}'.format(i, IoU_array, mean_IoU))
 
     # writer = writer_dict['writer']
     # global_steps = writer_dict['valid_global_steps']
@@ -181,7 +164,8 @@ def validate(config, testloader, model, writer_dict):
     # # writer.add_scalar('valid_avg_sb_loss', ave_loss.average()-avg_sem_loss.average()-avg_bce_loss.average(), global_steps)
     # writer.add_scalar('valid_mIoU', mean_IoU, global_steps)
     # writer_dict['valid_global_steps'] = global_steps + 1
-    return ave_loss.average(), mean_IoU, ave_acc.average(), avg_sem_loss.average(), avg_bce_loss.average(), avg_sb_loss.average(), avg_box_loss.average(), avg_conf_loss.average()
+    return avg_loss.average(), avg_loss_location.average(), avg_iou.average()
+
 
 
 def testval(config, test_dataset, testloader, model,
