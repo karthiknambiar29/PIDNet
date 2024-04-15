@@ -103,7 +103,17 @@ class PIDNet(nn.Module):
             nn.ReLU(inplace=True),
             nn.Linear(128, 5)
         )
-
+        self.deconv = nn.Sequential(
+            nn.BatchNorm2d(128),
+            nn.ConvTranspose2d(128,256,3,2,1,1),
+            nn.ReLU(True),
+            nn.BatchNorm2d(256),
+            nn.ConvTranspose2d(256,128,3,2,1,1),
+            nn.ReLU(True),
+            nn.BatchNorm2d(128),
+            nn.ConvTranspose2d(128,64,3,2,1,1),
+            nn.ReLU(True),
+        )
         # Prediction Head
         if self.augment:
             self.seghead_p = segmenthead(planes * 2, head_planes, num_classes)
@@ -194,6 +204,7 @@ class PIDNet(nn.Module):
 
         x_temp = self.dfm(x_, x, x_d)
         x_ = self.final_layer(x_temp)
+        
         bb_out = self.bb_conv(x_temp)
 
         bb_out = bb_out.view(bb_out.size(0), bb_out.size(1), -1)
